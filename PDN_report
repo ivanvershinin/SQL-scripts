@@ -1,0 +1,517 @@
+drop table ivv_base;
+create table ivv_base as 
+select --+parallel(8)
+dm.ID_EVID_SRV
+,dm.SK_APPLICATION
+,dm.SK_DATE_DECISION
+,dm.SK_CONTRACT_TYPE
+,dm.sk_contract_type_incoming
+,dm.SK_CONTRACT_STATUS
+,dm.DTIME_APPROVAL_PROCESS_START
+,dm.sk_date_approval_process_start
+,dm.AMT_CREDIT
+,dm.AMT_ANNUITY
+,dm.AMT_INCOME_PERSONAL
+,dm.CODE_SCORE_GROUP
+
+,va.annuity_next_month
+,va.amt_current_debt
+,adt.CODE_REGION as job_region
+,ad.code_region as registration_region
+
+,case 
+    when gp_risk_an.occupation(gp_risk_an.organization1(nvl(ac.name_employer,'XNA')),nvl(ac.text_occupation,'XNA'))='Accountants' then  'Accountants'
+    when gp_risk_an.occupation(gp_risk_an.organization1(nvl(ac.name_employer,'XNA')),nvl(ac.text_occupation,'XNA'))='HR staff' then  'HR staff' 
+    when gp_risk_an.occupation(gp_risk_an.organization1(nvl(ac.name_employer,'XNA')),nvl(ac.text_occupation,'XNA'))='Medicine staff' then  'Medicine staff'
+    when gp_risk_an.occupation(gp_risk_an.organization1(nvl(ac.name_employer,'XNA')),nvl(ac.text_occupation,'XNA'))='High skill tech staff' then  'High skill tech staff'
+    when gp_risk_an.occupation(gp_risk_an.organization1(nvl(ac.name_employer,'XNA')),nvl(ac.text_occupation,'XNA')) is null then 'null' 
+    when gp_risk_an.occupation(gp_risk_an.organization1(nvl(ac.name_employer,'XNA')),nvl(ac.text_occupation,'XNA'))='Private service staff' then  'Private service staff'
+    when gp_risk_an.occupation(gp_risk_an.organization1(nvl(ac.name_employer,'XNA')),nvl(ac.text_occupation,'XNA'))='Core staff' then  'Core staff'
+    when gp_risk_an.occupation(gp_risk_an.organization1(nvl(ac.name_employer,'XNA')),nvl(ac.text_occupation,'XNA'))='Managers' then  'Managers'
+    when gp_risk_an.occupation(gp_risk_an.organization1(nvl(ac.name_employer,'XNA')),nvl(ac.text_occupation,'XNA'))='Secretaries' then  'Secretaries'
+    when gp_risk_an.occupation(gp_risk_an.organization1(nvl(ac.name_employer,'XNA')),nvl(ac.text_occupation,'XNA'))='Cleaning staff' then  'Cleaning staff' 
+    when gp_risk_an.occupation(gp_risk_an.organization1(nvl(ac.name_employer,'XNA')),nvl(ac.text_occupation,'XNA'))='IT staff' then  'IT staff'
+    when gp_risk_an.occupation(gp_risk_an.organization1(nvl(ac.name_employer,'XNA')),nvl(ac.text_occupation,'XNA'))='Cooking staff' then  'Cooking staff'
+    when gp_risk_an.occupation(gp_risk_an.organization1(nvl(ac.name_employer,'XNA')),nvl(ac.text_occupation,'XNA'))='Sales staff' then  'Sales staff'
+    when gp_risk_an.occupation(gp_risk_an.organization1(nvl(ac.name_employer,'XNA')),nvl(ac.text_occupation,'XNA'))='Realty agents' then 'Realty agents' 
+    when gp_risk_an.occupation(gp_risk_an.organization1(nvl(ac.name_employer,'XNA')),nvl(ac.text_occupation,'XNA'))='Security staff' then  'Security staff' 
+    when gp_risk_an.occupation(gp_risk_an.organization1(nvl(ac.name_employer,'XNA')),nvl(ac.text_occupation,'XNA'))='Waiters/barmen staff' then 'Waiters/barmen staff'
+    when gp_risk_an.occupation(gp_risk_an.organization1(nvl(ac.name_employer,'XNA')),nvl(ac.text_occupation,'XNA'))='Laborers' then 'Laborers'
+    when gp_risk_an.occupation(gp_risk_an.organization1(nvl(ac.name_employer,'XNA')),nvl(ac.text_occupation,'XNA'))='Drivers' then 'Drivers'
+    when gp_risk_an.occupation(gp_risk_an.organization1(nvl(ac.name_employer,'XNA')),nvl(ac.text_occupation,'XNA'))='Low-skill Laborers' then 'Low-skill Laborers'
+    end as occupation
+
+,case when adt.code_region in ('77', '50', '47', '78', '89') then 1
+     when adt.name_town in ('Норильск','Ханты-Мансийск','Сургут') then 1
+     when adt.sk_application is null then 0
+     else 0 end good_region
+
+,case when months_between(dm.DTIME_APPROVAL_PROCESS_START,va.firstadate)>=1 then 0 else 1 end as isNewClient
+
+
+from 
+gp_risk_mon.tm_datamart_daily dm
+
+
+left join gp_risk_mon.vector_attribute va on dm.SK_APPLICATION = va.sk_application 
+                                        and dm.SK_CONTRACT_TYPE = va.sk_contract_type
+                                        and dm.SK_DATE_DECISION = va.sk_date_decision
+
+left join owner_dwh.dc_application_client ac on dm.sk_application=ac.sk_application
+                                             and dm.sk_date_decision=ac.sk_date_decision
+                                             and dm.sk_contract_type=ac.sk_contract_type
+                                             and ac.sk_client_role=1
+                                             --and ac.text_mobil is not null 
+                                             and ac.text_mobil<>'XNA'
+                                             and ac.text_mobil<>'0000000000'
+
+left join owner_dwh.f_application_address_tt adt on
+                                            dm.sk_application =adt.sk_application
+                                            and dm.sk_date_decision=adt.sk_date_decision
+                                            and dm.sk_contract_type=adt.sk_contract_type
+                                            and adt.sk_client_role=1
+                                            and adt.sk_address_type=3
+
+left join owner_dwh.f_application_address_tt ad 
+                                            on dm.sk_application = ad.sk_application
+                                            and dm.SK_DATE_DECISION = ad.sk_date_decision
+                                            and dm.sk_contract_type=ad.sk_contract_type
+                                            and ad.sk_address_type = 1
+                                            and ad.sk_client_role = 1 
+
+where 
+dm.sk_date_approval_process_start between 20200311 and 20200400 and
+dm.SK_DATE_DECISION > 20200311 and 
+dm.SK_CONTRACT_STATUS not in (8, 4, 13);
+
+
+
+
+drop table ivv_pdn_incomes;
+create table ivv_pdn_incomes as 
+select --+parallel(8)
+dm.* 
+
+,nvl(c.amt_income_extra,0) as amt_income_extra_dc 
+,nvl(c.amt_income_pension,0) as amt_income_pension_dc
+,nvl(c.amt_income_salary_account,0) as amt_income_salary_account_dc
+
+,case when nvl(c.dtime_income_confirm_due_pit, to_date(30000101, 'yyyymmdd')) < to_date(30000101, 'yyyymmdd')
+          and c.dtime_income_confirm_due_pit > dm.dtime_approval_process_start then nvl(c.amt_income_pit,0)
+     else null end as amt_income_pit_dc
+
+,case when nvl(c.dtime_income_confirm_due_pfrf, to_date(30000101, 'yyyymmdd')) < to_date(30000101, 'yyyymmdd')
+          and c.dtime_income_confirm_due_pfrf > dm.dtime_approval_process_start then nvl(c.amt_income_pfrf,0)
+     else null end as amt_income_pfrf_dc
+
+,case when nvl(c.dtime_income_confirm_due_cb, to_date(30000101, 'yyyymmdd')) < to_date(30000101, 'yyyymmdd')
+          and c.dtime_income_confirm_due_cb > dm.dtime_approval_process_start then nvl(c.amt_income_cb,0)
+     else null end as amt_income_cb_dc
+
+,uw.trust_sum as rescriction_main_occupation
+
+,reg.income as median_region_calc
+
+from 
+ivv_base dm 
+
+left join owner_dwh.dc_income_confirm c on
+c.sk_application = dm.sk_application and 
+c.sk_date_decision = dm.sk_date_decision 
+
+left join ivv_uw_table uw on 
+dm.good_region = uw.good_region and 
+dm.occupation = uw.occupation and 
+dm.isnewclient = uw.new_client
+
+left join gor_regional_income
+ reg on 
+nvl(dm.registration_region,'0') = reg.code_region and 
+dm.dtime_approval_process_start between reg.date_from and reg.date_to
+;
+
+
+
+
+
+
+
+drop table ivv_bki_calc;
+create table ivv_bki_calc as
+select --+parallel(8)
+dm.id_evid_srv
+,dm.SK_APPLICATION
+,dm.SK_DATE_DECISION
+,dm.SK_CONTRACT_TYPE
+,dm.DTIME_APPROVAL_PROCESS_START
+
+
+
+,nvl(t.confirmedincome_resco,t.confirmedincome_before_resco) as result_confirmed_income_vector
+,t.pfr_income_resco as pfr_income_resco_vector
+,t.main_confirmed_income as main_confirmed_income_vector
+,t.extra_confirmed_income as extra_confirmed_income_vector
+,t.pension as pension_vector
+,t.salary_income as salary_income_vector
+
+,t.regulatorcbannuity as annuity_regulator_vector
+,t.bki_income as bki_income_vector
+,t.used_income_type as used_income_type_vector
+,t.usedincome as usedincome_vector
+,t.regavailannuity_resco as regulatoravailablann_vector
+
+,t.regionmedian as region_median_vector
+,t.regionalavailableannuity as regionalavlannuity_vector
+
+,t.finalpti as finalpti_vector
+
+,case when dm.id_evid_srv like '5%' then 
+
+                                        sum(gp_risk_an.getsumannuitycblogic_mfo(effectiveInterestRate => case when cb.amt_credit_cost_rate is not null 
+                                                                                                                   and cb.amt_credit_cost_rate > 0 then cb.amt_credit_cost_rate 
+                                                                                                                                                 else r.avg_effective_rate end,
+                                        creditTypeUni =>  cb.credit_type_uni,
+                                        creditUpdate => cb.dtime_credit_update ,
+                                        currentDate =>  dm.DTIME_APPROVAL_PROCESS_START,
+                                        creditEndDate => cb.dtime_credit_enddate,
+
+                                        creditDate => cb.dtime_credit,
+                                        creditEndDateFact => cb.dtime_credit_enddate_fact ,
+                                        creditSumOverdue =>  cb.amt_credit_sum_overdue,
+                                        creditOwner =>  cb.flag_credit_owner,
+                                        creditSumDebt =>cb.amt_credit_sum_debt ,
+                                        creditSum => cb.amt_credit_sum,
+                                        creditJoint =>  cb.nflag_credit_joint,
+                                        creditCurrency =>  cb.credit_currency)) 
+                                    
+                                   else
+                                        sum(gp_risk_an.GetSumAnnuityCBlogic_HCFB(effectiveInterestRate => case when cb.amt_credit_cost_rate is not null 
+                                                                                                                   and cb.amt_credit_cost_rate > 0 then cb.amt_credit_cost_rate 
+                                                                                                                                                 else r.avg_effective_rate end,
+                                        creditTypeUni =>  cb.credit_type_uni,
+                                        creditUpdate => cb.dtime_credit_update ,
+                                        currentDate =>  dm.DTIME_APPROVAL_PROCESS_START,
+                                        creditEndDate => cb.dtime_credit_enddate,
+
+                                        creditDate => cb.dtime_credit,
+                                        creditEndDateFact => cb.dtime_credit_enddate_fact ,
+                                        creditSumOverdue =>  cb.amt_credit_sum_overdue,
+                                        creditOwner =>  cb.flag_credit_owner,
+                                        creditSumDebt =>cb.amt_credit_sum_debt ,
+                                        creditSum => cb.amt_credit_sum,
+                                        creditJoint =>  cb.nflag_credit_joint,
+                                        creditCurrency =>  cb.credit_currency)) end as annuity_regulator_calc --регуляторный аннуитет, рассчитанный на каждом из кредитов клиента
+
+,case when dm.id_evid_srv like '5%' then 
+                                    sum(gp_risk_an.ivv_getavgannuitycb12_fin(effectiveInterestRate => case when cb.amt_credit_cost_rate is not null 
+                                                                                                               and cb.amt_credit_cost_rate > 0 then cb.amt_credit_cost_rate 
+                                                                                                                                             else r.avg_effective_rate end,
+                                                                        creditTypeUni =>  cb.credit_type_uni,
+                                                                        creditUpdate => cb.dtime_credit_update ,
+                                                                        currentDate =>  dm.DTIME_APPROVAL_PROCESS_START,
+                                                                        creditEndDate => cb.dtime_credit_enddate,
+                                                                        creditdate => cb.dtime_credit,
+                                                                        creditEndDateFact => cb.dtime_credit_enddate_fact ,
+                                                                        creditSumDebt =>cb.amt_credit_sum_debt ,
+                                                                        creditSum => cb.amt_credit_sum,
+                                                                        creditJoint =>  cb.nflag_credit_joint,
+                                                                        creditActive => cb.credit_active ,
+                                                                        creditCurrency =>  cb.credit_currency,
+                                                                        textpayment => cb.text_payment_discipline)*2)
+                                    
+                                    else    
+                                    sum(gp_risk_an.ivv_getavgannuitycb24_fin(effectiveInterestRate => case when cb.amt_credit_cost_rate is not null 
+                                                                                                               and cb.amt_credit_cost_rate > 0 then cb.amt_credit_cost_rate 
+                                                                                                                                             else r.avg_effective_rate end,
+                                                                        creditTypeUni =>  cb.credit_type_uni,
+                                                                        creditUpdate => cb.dtime_credit_update ,
+                                                                        currentDate =>  dm.DTIME_APPROVAL_PROCESS_START,
+                                                                        creditEndDate => cb.dtime_credit_enddate,
+                                                                        creditdate => cb.dtime_credit,
+                                                                        creditEndDateFact => cb.dtime_credit_enddate_fact ,
+                                                                        creditSumDebt =>cb.amt_credit_sum_debt ,
+                                                                        creditSum => cb.amt_credit_sum,
+                                                                        creditJoint =>  cb.nflag_credit_joint,
+                                                                        creditActive => cb.credit_active ,
+                                                                        creditCurrency =>  cb.credit_currency,
+                                                                        textpayment => cb.text_payment_discipline)*2) end as bki_income_calc --доход рассчитанный на данных бки
+
+
+from
+     ivv_base dm
+
+     left join owner_dwh.f_credit_bureau_data_tt cb 
+on dm.SK_APPLICATION = cb.sk_application
+and dm.SK_DATE_DECISIOn = cb.sk_date_decision
+and dm.sk_contract_type = cb.sk_contract_type and
+cb.nflag_credit_joint = 1
+
+     left  join gp_risk_mon.pdn_attribute t on 
+dm.SK_APPLICATION  = t.sk_application and 
+dm.sk_contract_type = t.sk_contract_type and 
+dm.sk_date_decision = t.sk_date_decision
+
+    left join (select 
+               m.credit_type_uni,
+               max(m.quarter) as max_date_costrate
+               from gp_risk_an.gor_avg_effective_rate m
+               group by m.credit_type_uni
+               ) m
+               on m.credit_type_uni= cb.credit_type_uni
+          
+    left join gp_risk_an.gor_avg_effective_rate r on 
+                                                    r.quarter = case when cb.dtime_credit >= m.max_date_costrate then m.max_date_costrate
+                                                                      when cb.dtime_credit >=to_date(20141001, 'yyyymmdd') then trunc(cb.dtime_credit, 'q')
+                                                                      else to_date(20140901, 'yyyymmdd') end
+                                                    and cb.credit_type_uni =r.credit_type_uni
+                                                    and m.credit_type_uni=r.credit_type_uni
+                                                    and round(greatest(least(nvl(ceil(months_between(cb.dtime_credit_enddate, cb.dtime_credit)),36),100),0)) between r.min_cnt_payment and r.max_cnt_payment
+                                                    and least(nvl(cb.amt_credit_sum,0),1000000000) between r.min_credit_sum and r.max_credit_sum  
+where
+t.SK_DATE_DECISION > 20200310 and
+cb.SK_DATE_DECISION > 20200310
+group by 
+dm.id_evid_srv
+,dm.SK_APPLICATION
+,dm.SK_DATE_DECISION
+,dm.SK_CONTRACT_TYPE
+,dm.DTIME_APPROVAL_PROCESS_START
+
+
+
+,nvl(t.confirmedincome_resco,t.confirmedincome_before_resco)
+,t.pfr_income_resco
+,t.main_confirmed_income
+,t.extra_confirmed_income
+,t.pension
+,t.salary_income
+
+,t.regulatorcbannuity
+,t.bki_income
+,t.used_income_type
+,t.usedincome
+,t.regavailannuity_resco
+
+,t.regionmedian
+,t.regionalavailableannuity
+
+,t.finalpti;
+
+
+
+
+
+drop table ivv_confirmed_income;
+create table ivv_confirmed_income as 
+select --+parallel(8)
+dm.*
+
+,greatest(nvl(dm.amt_income_cb_dc,0),
+nvl(dm.amt_income_pfrf_dc,0),
+nvl(dm.amt_income_pit_dc,0) + nvl(dm.amt_income_extra_dc,0) + nvl(dm.amt_income_pension_dc,0),
+nvl(dm.amt_income_salary_account_dc,0)) as confirmed_income_dc
+
+,greatest(nvl(bc.bki_income_calc,0),
+nvl(dm.amt_income_pfrf_dc,0),
+nvl(dm.amt_income_pit_dc,0) + nvl(dm.amt_income_extra_dc,0) + nvl(dm.amt_income_pension_dc,0),
+nvl(dm.amt_income_salary_account_dc,0)) as confirmed_income_calc
+
+,bc.finalpti_vector
+,bc.used_income_type_vector
+,bc.usedincome_vector
+,nvl(bc.annuity_regulator_calc,0) as annuity_regulator_calc
+,nvl(bc.bki_income_calc,0) as bki_income_calc
+from 
+ivv_pdn_incomes dm
+join
+ivv_bki_calc bc on 
+dm.SK_APPLICATION = bc.SK_APPLICATION and
+dm.SK_DATE_DECISION = bc.SK_DATE_DECISION and
+dm.SK_CONTRACT_TYPE = bc.SK_CONTRACT_TYPE
+ ;
+
+
+
+drop table ivv_pre_b_variable;
+create table ivv_pre_b_variable as 
+select --+parallel(8)
+dm.*
+,least(nvl(dm.confirmed_income_calc,1), nvl(dm.amt_income_personal,1)*2)* case when dm.sk_contract_type = 2 then 0.7 else 0.8 end - nvl(dm.annuity_regulator_calc,0) -nvl(dm.annuity_next_month,0) as regualtorAvailAnn_calc
+,least(nvl(dm.median_region_calc,1), nvl(dm.amt_income_personal,1))* case when dm.sk_contract_type = 2 then 0.7 else 0.8 end - nvl(dm.annuity_regulator_calc,0) -nvl(dm.annuity_next_month,0) as regualtorRegionAnn_calc
+,100000 - nvl(dm.amt_current_debt,0) as availableCurrDebt
+,least(nvl(dm.rescriction_main_occupation,1), nvl(dm.amt_income_personal,1)) as restrictMainOccupation_calc
+
+,least(nvl(dm.confirmed_income_calc,1), nvl(dm.amt_income_personal,1)*2) as restrictConfirmedInc_calc
+
+,case when dm.confirmed_income_calc = nvl(dm.bki_income_calc,0) then 'bki'
+      when dm.confirmed_income_calc = nvl(dm.amt_income_pit_dc,0) + nvl(dm.amt_income_extra_dc,0) + nvl(dm.amt_income_pension_dc,0) then '2NDFL'
+      when dm.confirmed_income_calc = nvl(dm.amt_income_salary_account_dc,0) then 'salaryAccount' end as conf_income_type
+
+
+,least(nvl(dm.median_region_calc,1), nvl(dm.amt_income_personal,1)) as restrictMedianRegion_calc
+,nvl(dm.annuity_next_month,0)+nvl(dm.annuity_regulator_calc,0)+nvl(dm.amt_annuity,0) as paymentPTI
+
+from 
+ivv_confirmed_income dm
+;
+
+
+drop table ivv_pdn_final;
+create table ivv_pdn_final as 
+select --+parallel(8)
+dm.id_evid_srv
+,dm.sk_application
+,dm.sk_contract_type
+,dm.sk_date_decision
+,dm.good_region
+,dm.occupation 
+,dm.isnewclient
+,dm.registration_region
+,dm.sk_contract_type_incoming
+
+
+,dm.finalpti_vector,
+dm.used_income_type_vector,
+dm.usedincome_vector
+
+/*,least(nvl(dm.confirmed_income_calc,1), nvl(dm.amt_income_personal,1)*2)* case when dm.sk_contract_type = 2 then 0.7 else 0.8 end as available_debt_pti*/
+
+,dm.conf_income_type
+
+
+,case when dm.used_income_type_vector like '%paper%' then 'paperIncome' 
+     else 
+        case when nvl(dm.amt_annuity,0) <= regualtorAvailAnn_calc
+             then 'confirmed_income'
+        else
+             case when nvl(dm.amt_annuity,0) <= regualtorRegionAnn_calc and (nvl(dm.amt_credit,0) <= availableCurrDebt or dm.id_evid_srv like '5%')
+                     then 'medianRegion'                     
+             else
+                 case when nvl(dm.amt_annuity,0) <= restrictMainOccupation_calc* case when dm.sk_contract_type = 2 then 0.7 else 0.8 end -nvl(dm.annuity_regulator_calc,0) - nvl(dm.annuity_next_month,0) and nvl(dm.amt_credit,0) <= 50000 and (nvl(dm.amt_credit,0) <= availableCurrDebt or dm.id_evid_srv = '5%')
+                 then 'mainOccupation'
+                 else  case when restrictConfirmedInc_calc >= restrictMedianRegion_calc and dm.id_evid_srv like '5%'
+                                 then 'confirmed_income'   
+                            when restrictMedianRegion_calc >  restrictConfirmedInc_calc and dm.id_evid_srv like '5%'
+                                 then  'medianRegion' 
+                            else case when nvl(dm.amt_annuity,0) <= regualtorRegionAnn_calc 
+                                     then 'madianRegion'
+                                     when nvl(dm.amt_annuity,0) <= restrictMainOccupation_calc* case when dm.sk_contract_type = 2 then 0.7 else 0.8 end -nvl(dm.annuity_regulator_calc,0) - nvl(dm.annuity_next_month,0) and nvl(dm.amt_credit,0) <= 50000 
+                                     then 'mainOccupation'
+                                else case when restrictConfirmedInc_calc >= restrictMedianRegion_calc
+                                          then 'confirmed_income'
+                                          when restrictMedianRegion_calc >  restrictConfirmedInc_calc
+                                          then 'medianRegion'
+                                     end
+                                end
+                        end
+                 end
+             end
+        end
+end 
+as Usedincome_type_v
+
+
+,case when dm.used_income_type_vector like '%paper%' then round(paymentPTI/dm.amt_income_personal,2) 
+     else 
+        case when nvl(dm.amt_annuity,0) <= regualtorAvailAnn_calc
+             then round(paymentPTI/restrictConfirmedInc_calc,2)
+        else
+             case when nvl(dm.amt_annuity,0) <= regualtorRegionAnn_calc and (nvl(dm.amt_credit,0) <= availableCurrDebt or dm.id_evid_srv like '5%')
+                     then round(paymentPTI/restrictMedianRegion_calc,2)                
+             else
+                 case when nvl(dm.amt_annuity,0) <= restrictMainOccupation_calc* case when dm.sk_contract_type = 2 then 0.7 else 0.8 end -nvl(dm.annuity_regulator_calc,0) - nvl(dm.annuity_next_month,0) and nvl(dm.amt_credit,0) <= 50000 and (nvl(dm.amt_credit,0) <= availableCurrDebt or dm.id_evid_srv = '5%')
+                      then round(paymentPTI/restrictMainOccupation_calc,2)
+                 else case when restrictConfirmedInc_calc >= restrictMedianRegion_calc and dm.id_evid_srv like '5%'
+                                then round(paymentPTI/restrictConfirmedInc_calc,2)
+                           when restrictMedianRegion_calc >  restrictConfirmedInc_calc and dm.id_evid_srv like '5%'
+                                then  round(paymentPTI/restrictMedianRegion_calc,2)
+                           else case when nvl(dm.amt_annuity,0) <= regualtorRegionAnn_calc 
+                                     then round(paymentPTI/restrictMedianRegion_calc,2)
+                                     when nvl(dm.amt_annuity,0) <= restrictMainOccupation_calc* case when dm.sk_contract_type = 2 then 0.7 else 0.8 end -nvl(dm.annuity_regulator_calc,0) - nvl(dm.annuity_next_month,0) and nvl(dm.amt_credit,0) <= 50000 
+                                     then  round(paymentPTI/restrictMainOccupation_calc,2)
+                                else case when restrictConfirmedInc_calc >= restrictMedianRegion_calc
+                                          then round(paymentPTI/restrictConfirmedInc_calc,2)
+                                          when restrictMedianRegion_calc >  restrictConfirmedInc_calc
+                                          then  round(paymentPTI/restrictMedianRegion_calc,2)
+                                     end
+                                end
+                       end
+                 end
+             end
+        end
+end 
+as finalPTI_v
+
+
+,case when dm.used_income_type_vector like '%paper%' then dm.amt_income_personal 
+     else 
+        case when nvl(dm.amt_annuity,0) <= regualtorAvailAnn_calc
+             then restrictConfirmedInc_calc
+        else
+             case when nvl(dm.amt_annuity,0) <= regualtorRegionAnn_calc and (nvl(dm.amt_credit,0) <= availableCurrDebt or dm.id_evid_srv like '5%')
+                     then restrictMedianRegion_calc                
+             else
+                 case when nvl(dm.amt_annuity,0) <= restrictMainOccupation_calc* case when dm.sk_contract_type = 2 then 0.7 else 0.8 end -nvl(dm.annuity_regulator_calc,0) - nvl(dm.annuity_next_month,0) and nvl(dm.amt_credit,0) <= 50000 and (nvl(dm.amt_credit,0) <= availableCurrDebt or dm.id_evid_srv = '5%')
+                      then restrictMainOccupation_calc
+                 else case when restrictConfirmedInc_calc >= restrictMedianRegion_calc and dm.id_evid_srv like '5%'
+                                then restrictConfirmedInc_calc
+                           when restrictMedianRegion_calc >  restrictConfirmedInc_calc and dm.id_evid_srv like '5%'
+                                then restrictMedianRegion_calc
+                           else case when nvl(dm.amt_annuity,0) <= regualtorRegionAnn_calc 
+                                     then restrictMedianRegion_calc
+                                     when nvl(dm.amt_annuity,0) <= restrictMainOccupation_calc* case when dm.sk_contract_type = 2 then 0.7 else 0.8 end -nvl(dm.annuity_regulator_calc,0) - nvl(dm.annuity_next_month,0) and nvl(dm.amt_credit,0) <= 50000 
+                                     then restrictMainOccupation_calc
+                                else case when restrictConfirmedInc_calc >= restrictMedianRegion_calc
+                                          then restrictConfirmedInc_calc
+                                          when restrictMedianRegion_calc >  restrictConfirmedInc_calc
+                                          then restrictMedianRegion_calc
+                                     end
+                                end
+                      end
+                 end
+             end
+        end
+end 
+as Usedincome_v
+
+
+/*,dm.result_confirmed_income_vector
+,dm.pfr_income_resco_vector
+,dm.main_confirmed_income_vector
+,dm.extra_confirmed_income_vector
+,dm.pension_vector
+,dm.salary_income_vector
+
+,dm.annuity_regulator_vector
+,dm.bki_income_vector
+
+,dm.region_median_vector
+
+,dm.confirmed_income_calc
+,dm.amt_income_extra_dc 
+,dm.amt_income_pension_dc
+,dm.amt_income_salary_account_dc
+
+
+,dm.bki_income_calc
+
+,dm.amt_income_pit_dc
+
+,dm.amt_income_pfrf_dc
+
+,dm.amt_income_cb_dc
+
+,nvl(dm.annuity_next_month,0) as annuity_next_month_calc
+,nvl(dm.annuity_regulator_calc,0) as annuity_regulator_calc
+,nvl(dm.amt_annuity,0) as amt_annuity
+
+,nvl(dm.annuity_next_month,0)+nvl(dm.annuity_regulator_calc,0)+nvl(dm.amt_annuity,0) as annuity_sum_calc
+
+,nvl(dm.confirmed_income_calc,1) as confirmed_calc
+,nvl(dm.median_region_calc,1) as median_calc
+,nvl(dm.amt_income_personal,1) as main_occ_calc*/
+
+
+
+from 
+ivv_pre_b_variable dm;
