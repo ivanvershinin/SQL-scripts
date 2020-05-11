@@ -1,0 +1,98 @@
+create or replace function ivv_GETAVGANNUITYCB24_fin
+(
+effectiveInterestRate in float,
+creditTypeUni in float,
+creditUpdate in date,
+currentDate in date,
+creditEndDate in date,
+creditEndDateFact in date,
+creditDate in date,
+creditSumDebt in float,
+creditSum in float,
+creditJoint in integer,
+creditCurrency in varchar2,
+textPayment in varchar2,
+creditActive in integer
+) return float PARALLEL_ENABLE as v_result float;
+
+k integer :=0;
+avgCreditTerm float := 36;
+annuity_k float :=0;
+cred_sum float := 0;
+t_power float := 0;
+creditEndDateFact_r date;
+begin
+  v_result:=0;
+
+  creditEndDateFact_r := case when months_between(creditEndDateFact, creditdate) < 0 then creditEndDate else creditEndDateFact end;
+
+  cred_sum:= case 
+                 when nvl(creditSumDebt,0) != 0 and
+                      --and months_between(nvl(creditEndDateFact, nvl(creditEndDate,to_date(30000101, 'yyyymmdd'))), nvl(creditUpdate,currentDate)) > 0 
+                      (currentDate is not null) and
+                      (creditUpdate is null or (creditUpdate is not null and creditUpdate <= currentDate)) and
+                      (creditEndDate is null or (creditEndDate is not null and creditEndDate > currentDate)) and 
+                      (creditEndDateFact_r is null or (creditEndDateFact_r is not null and creditEndDateFact_r > currentDate))
+                 then creditSumDebt 
+                 else nvl(creditSum,0)
+             end;
+
+  t_power:= case 
+                when nvl(creditSumDebt,0) != 0 and
+                     --and months_between(nvl(creditEndDateFact, nvl(creditEndDate,to_date(30000101, 'yyyymmdd'))), nvl(creditUpdate,currentDate)) > 0 
+                      (currentDate is not null) and
+                      (creditUpdate is null or (creditUpdate is not null and creditUpdate <= currentDate)) and
+                      (creditEndDate is null or (creditEndDate is not null and creditEndDate > currentDate)) and 
+                      (creditEndDateFact_r is null or (creditEndDateFact_r is not null and creditEndDateFact_r > currentDate))
+                then nvl(ceil(months_between(nvl(creditEndDateFact_r, creditEndDate), nvl(creditUpdate,currentDate))), 36) 
+                else ceil(months_between(nvl(creditEndDateFact_r, creditEndDate),creditDate))  
+            end;
+if (
+    (creditJoint is not null and  creditJoint = 1) and
+    (currentDate is not null) and
+     creditDate is not null and 
+     gp_risK_an.Getdatediffmonthsdiff(creditDate, nvl(creditEndDate,to_date(30000101, 'yyyymmdd')))>0 --проверка, что кредит имеет положительную плановую длину
+   ) then
+
+while k<12 loop
+ annuity_k:= annuity_k + 
+           nvl(
+           case 
+           when 
+                creditSum is not null
+                and months_between(trunc(nvl(creditEndDateFact_r, nvl(creditEndDate, to_date(30000101, 'yyyymmdd'))), 'mm'), trunc(add_months(currentDate,-k), 'mm'))>0
+                and months_between(trunc(add_months(currentDate,-k), 'mm'), trunc(creditDate, 'mm') )>0
+                and nvl(substr(textPayment, k+1, 1),'0') not in ('3','4','5','6','7','8','9','B','S','R','W','N','U','T','I')
+                and creditTypeUni = 4 
+           then (gp_risk_an.Change_currency(nvl(creditSum, 0), upper(creditCurrency)) * 0.05)
+           when 
+                months_between(trunc(nvl(creditEndDateFact_r, nvl(creditEndDate, to_date(30000101, 'yyyymmdd'))), 'mm'), trunc(add_months(currentDate,-k), 'mm'))>0
+                and months_between(trunc(add_months(currentDate,-k), 'mm'), trunc(creditDate, 'mm') )>0
+                and nvl(substr(textPayment, k+1, 1),'0') not in ('3','4','5','6','7','8','9','B','S','R','W','N','U','T','I')
+                and creditTypeUni in (1, 3) 
+           then
+               (
+                 ( (effectiveInterestRate * gp_risk_an.Change_currency(nvl(cred_sum,0),upper(creditCurrency)) )/1200)/
+                     (1 - power( 1 + (effectiveInterestRate)/1200, - gp_risk_an.ovl(nvl(t_power, avgCreditTerm),36)))
+               )            
+           when 
+                 months_between(trunc(nvl(creditEndDateFact_r, nvl(creditEndDate, to_date(30000101, 'yyyymmdd'))), 'mm'), trunc(add_months(currentDate,-k), 'mm'))>0
+                and months_between(trunc(add_months(currentDate,-k), 'mm'), trunc(creditDate, 'mm') )>0
+                and nvl(substr(textPayment, k+1, 1),'0') not in ('3','4','5','6','7','8','9','B','S','R','W','N','U','T','I')
+                and creditTypeUni not in (1, 3, 4) 
+           then
+               (
+                 ( (effectiveInterestRate * gp_risk_an.Change_currency(nvl(cred_sum,0),upper(creditCurrency)) )/1200)/
+                     (1 - power( 1 + (effectiveInterestRate)/1200, - least(gp_risk_an.ovl(nvl(t_power, avgCreditTerm),36),60)))
+               )
+           end, 0);
+k:= k + 1;
+end loop;
+ 
+
+
+
+v_result:= nvl(annuity_k,0)/24;
+end if;
+  return(nvl(v_result,0));
+end ivv_GETAVGANNUITYCB24_fin;
